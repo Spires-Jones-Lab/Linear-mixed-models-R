@@ -1,0 +1,110 @@
+---
+title: "APP/PS1xTau mouse LTP and memory stats"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. 
+
+First load required libraries then import the data into dataframe called dataARUK
+
+```{r}
+library(readr)
+library(forcats)
+library(lme4)
+library(ggplot2)
+library(stargazer)
+library(lmerTest)
+library(rcompanion)
+library(tidyverse)
+library(emmeans)
+library(ggResidpanel)
+
+# NOTE SET working directory to location of files ***
+setwd("~/Dropbox (UK Dementia Research Institute)/Spires-Jones Lab/lab member files - current/Tara/Editorial positions/Brain Communications/SampleLMER")
+
+# read in data 
+      
+dataARUKage <- read_csv("ARUK-stats-age.csv", col_types = cols (
+  Mouse_ID = 'f',
+  Genotype = 'f',
+  Sex = 'f'
+))
+
+dataARUKage$GenotypeOrdered <- ordered(dataARUKage$Genotype, levels=c("control", "APP/PS1", "Tau","APP/PS1+Tau"))
+dataARUKage$Age_ordered <- as.factor(dataARUKage$Age)
+
+
+table1::label(dataARUKage$GenotypeOrdered) <- "genotype"
+table1::label(dataARUKage$Sex) <- "Sex"
+table1::label(dataARUKage$Age_ordered) <- "Age"
+	
+table1::table1(~  Sex | GenotypeOrdered, data = dataARUKage)
+
+
+```
+
+Formally test for age, sex, and genotype effects on exploration time using linear mixed effects model that takes into account multiple measurements per mice and the fact that mice were tested in 2 cohorts (one tested at 3, 6, 9 months, the other at 10.5 and 14 months). We find there were sgnificant effects of  sex and age on exploration time, but not genotype.
+
+```{r}
+#relevel the data to compare everything in the model to control mice
+dataARUKage$Genotype <- relevel(dataARUKage$Genotype, ref = "control")
+
+#linear mixed effecrts model taking into account 2 batches of mice tested (at 3, 6, 9 months and the other at 10, 14 months)
+ME_EXPL<- lmer(EXPL~Genotype*Age+Sex+(1|ExpGroup)+(1|Mouse_ID),data = dataARUKage)
+summary(ME_EXPL)
+resid_panel(ME_EXPL) # NOTE residual plots indicate that the data meet assumptions of LMER without transformation
+emmeans(ME_EXPL, list(pairwise ~ Genotype + Age + Sex), adjust = "tukey")
+
+
+```
+
+Plot exploration time averages by age:
+
+```{r}
+
+# take means and se per group for plotting
+library(plyr)
+EXPLageAvg <- ddply(dataARUKage, c("Age", "GenotypeOrdered"), summarise,
+               N    = length(EXPL),
+               mean = mean(EXPL, na.rm = TRUE),
+               sd   = sd(EXPL, na.rm = TRUE),
+               se   = sd / sqrt(N)
+)
+EXPLageAvg
+
+#plot averages per group
+pEXPLageAvg <- ggplot(EXPLageAvg, aes(x = Age, y = mean, group = GenotypeOrdered, colour = GenotypeOrdered)) +
+  geom_point() + 
+  # ylim(0, 100) + #sets y axis limits
+  ylab("exploration time (sec)")  + # sets the y-axis label
+  ylim(0, 90) + #sets y axis limits to 0-0.4
+  xlim(2, 15) + 
+  scale_x_continuous(breaks = pretty(EXPLageAvg$Age, n = 9)) +
+  xlab("age (months)")  + # sets the x-axis label
+  theme_classic(base_size = 14) + #classic theme makes white background without lines
+  theme(legend.position="none") + #removes legend since labels on x axis sufficient
+  scale_colour_manual(values=c("grey70","turquoise2","gold","magenta"))  #makes outlines and dots black
+ # scale_fill_manual(values=c("grey70","turquoise2","gold","magenta")) # fills bars with colors I want
+pEXPLageAvg + geom_line() + geom_errorbar(aes(ymin=mean-se, ymax=mean+se), width=.1) 
+
+#plot individual mouse data
+pEXPLageAvgInd <- ggplot(dataARUKage, aes(x = Age, y = EXPL, group = Mouse_ID, colour = GenotypeOrdered)) +
+  geom_point(aes(shape = Sex)) + 
+  ylim(0, 90) + #sets y axis limits
+  xlim(2,14.5)+
+  ylab("exploration time (sec)")  + # sets the y-axis label
+  xlab("age")  + # sets the x-axis label
+  theme_classic(base_size = 14) + #classic theme makes white background without lines
+  theme(legend.position="none") + #removes legend since labels on x axis sufficient
+  scale_colour_manual(values=c("grey70","turquoise2","gold","magenta"))  #makes outlines and dots black
+ # scale_fill_manual(values=c("grey70","turquoise2","gold","magenta")) # fills bars with colors I want
+pEXPLageAvgInd + geom_line() 
+
+```
+
+
+
